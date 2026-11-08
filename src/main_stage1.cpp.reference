@@ -1,0 +1,86 @@
+#include "model.hpp"
+#include <iomanip>
+#include <iostream>
+#include <stdexcept>
+
+int main(int argc,char** argv) {
+    if(argc!=3) { std::cerr<<"Usage: "<<argv[0]<<" <testcase_dir> <output_file>\n"; return 2; }
+    try {
+        std::filesystem::path dir=argv[1], output=argv[2];
+        // 防止使用者誤將輸出指定成輸入檔。
+        for(const auto* name:{"buf.lib","clk_tree.structure","SS_delay.rpt","FF_delay.rpt"})
+            if(std::filesystem::weakly_canonical(dir/name)==std::filesystem::weakly_canonical(output)) throw std::runtime_error("output must not overwrite an input file");
+        Design d=loadDesign(dir); auto a=clockArrival(d);
+		// ===== 印出 buffer library 的解析結果 =====
+		std::cout << "\n=== Parsed Buffer Library ===\n";
+		std::cout << "Cell count: " << d.cells.size() << "\n";
+
+		for (std::size_t i = 0; i < d.cells.size(); ++i) {
+			const auto& cell = d.cells[i];
+
+			std::cout << "Cell ID=" << i
+				<< " name=" << cell.name
+				<< " width=" << cell.width
+				<< " height=" << cell.height
+				<< " area=" << cell.width * cell.height
+				<< "\n";
+
+			for (int corner = 0; corner < 2; ++corner) {
+				std::cout << "  "
+					<< (corner == 0 ? "SS" : "FF")
+					<< " max_fanout="
+					<< cell.delay[corner].size()
+					<< "\n";
+
+				for (std::size_t j = 0;
+					j < cell.delay[corner].size();
+					++j) {
+					std::cout << "    fanout=" << j + 1
+						<< " delay=" << cell.delay[corner][j]
+						<< "\n";
+				}
+			}
+		}
+
+		// ===== 印出兩個 corner 的 data path 解析結果 =====
+		for (int corner = 0; corner < 2; ++corner) {
+			const auto& report = d.reports[corner];
+
+			std::cout << "\n=== Parsed "
+				<< (corner == 0 ? "SS" : "FF")
+				<< " Report ===\n";
+
+			std::cout << "Clock period: " << report.period
+				<< "\n";
+
+			std::cout << "Path count: " << report.paths.size()
+				<< "\n";
+
+			for (const auto& path : report.paths) {
+				std::cout << path.name
+					<< " launch="
+					<< d.tree.nodes[path.launch].name
+					<< "(ID=" << path.launch << ")"
+					<< " capture="
+					<< d.tree.nodes[path.capture].name
+					<< "(ID=" << path.capture << ")"
+					<< " data_delay=" << path.delay
+					<< "\n";
+			}
+		}
+
+		std::cout << "\n";
+
+        std::size_t buffers=0,sinks=0;
+        for(const auto& n:d.tree.nodes) { buffers+=n.kind==Kind::Buffer; sinks+=n.kind==Kind::Sink; }
+        std::cout<<std::fixed<<std::setprecision(9);
+        std::cout<<"buffers="<<buffers<<" sinks="<<sinks<<" buffer_area="<<bufferArea(d)<<'\n';
+        for(int k=0;k<2;++k) {
+            auto m=timing(d,k,a[k]);
+            std::cout<<(k==0?"SS_setup":"FF_hold")<<" paths="<<d.reports[k].paths.size()<<" TNS="<<m.tns<<" WNS="<<m.wns<<" violations="<<m.violations<<'\n';
+        }
+        // 第一次報告：baseline。尚未插入 buffer 或 resizing。
+        writeTree(d.tree,output);
+        std::cout<<"Baseline tree written; no optimization performed.\n";
+    } catch(const std::exception& e) { std::cerr<<"ERROR: "<<e.what()<<'\n'; return 1; }
+}
