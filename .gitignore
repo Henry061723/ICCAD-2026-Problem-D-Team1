@@ -1,0 +1,22 @@
+/build/
+cadd0000
+test_operations
+*.o
+__pycache__/
+/results/
+/history.bundle
+# 編譯產物
+/cadd0000
+/build/
+*.o
+
+# 官方測資與執行結果
+/official_cases/
+/results/
+
+# 編輯器備份
+*.bak
+*~
+
+# 歷史匯出檔
+/history.bundle

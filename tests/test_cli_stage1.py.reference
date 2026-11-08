@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Integration tests with independently calculated timing and malformed inputs."""
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+EXE = pathlib.Path(sys.argv[1]).resolve()
+DEMO = pathlib.Path(__file__).resolve().parents[1] / 'examples/pdf_demo'
+count = 0
+def run(changes=None, error=None):
+    global count
+    with tempfile.TemporaryDirectory() as tmp:
+        case = pathlib.Path(tmp) / 'case'
+        shutil.copytree(DEMO, case)
+        for name, edit in (changes or {}).items():
+            p = case / name
+            p.write_text(edit(p.read_text()))
+        output = pathlib.Path(tmp) / 'out.structure'
+        p = subprocess.run([str(EXE), str(case), str(output)], capture_output=True, text=True)
+        if error:
+            assert p.returncode != 0 and error in p.stderr, (p.stdout, p.stderr)
+            assert not output.exists()
+        else:
+            assert p.returncode == 0, p.stderr
+            assert 'buffer_area=2.700000000' in p.stdout, p.stdout
+            # SS skews .019, .032; setup slacks .133, .101.
+            # FF skews .0062, .0138; hold slacks -.0032, -.0188.
+            assert 'SS_setup paths=2 TNS=0.000000000 WNS=0.000000000 violations=0' in p.stdout
+            assert 'FF_hold paths=2 TNS=-0.022000000 WNS=-0.018800000 violations=2' in p.stdout
+            shutil.copyfile(output, case/'clk_tree.structure')
+            out2 = pathlib.Path(tmp)/'out2.structure'
+            again = subprocess.run([str(EXE), str(case), str(out2)], capture_output=True, text=True)
+            assert again.returncode == 0 and again.stdout == p.stdout
+            assert out2.read_bytes() == output.read_bytes()
+        count += 1
+
+run()
+run({'clk_tree.structure': lambda s: '\ufeff'+s.replace('    ','\t').replace('\n','\r\n')})
+run({'clk_tree.structure': lambda s: s.replace('FF_12','FF_37')}, 'duplicate component')
+run({'clk_tree.structure': lambda s: s.replace('[1]','[2]',1)}, 'cannot skip levels')
+run({'clk_tree.structure': lambda s: s.replace('REALBUF_X8','UNKNOWN',1)}, 'unknown buffer type')
+run({'clk_tree.structure': lambda s: s.replace('[3] FF_12','[4] FF_12')}, 'SINK cannot have children')
+run({'clk_tree.structure': lambda s: s+' [2] BUF_EMPTY (REALBUF_X2)\n'}, 'unconnected output')
+run({'clk_tree.structure': lambda s: s+' [1] DIRECT (FIFO) (SINK)\n'}, 'driven by a buffer')
+run({'buf.lib': lambda s: s.replace('0.006 0.0098 0.0152 0.0247 0.0372','0.006')}, 'fanout exceeds corner 1')
+run({'buf.lib': lambda s: s.replace('SIZE 0.5 BY 0.5','SIZE 0.5 BY 0.5\n SIZE 0.5 BY 0.5')}, 'duplicate field')
+run({'buf.lib': lambda s: s.rstrip()[:-1]}, 'unclosed cell')
+run({'buf.lib': lambda s: s.replace('0.051','nan')}, 'finite nonnegative')
+run({'SS_delay.rpt': lambda s: s.replace('FF_5','MISSING')}, 'not a known SINK')
+run({'SS_delay.rpt': lambda s: s.replace('FF_5','BUF_0')}, 'not a known SINK')
+run({'SS_delay.rpt': lambda s: s.replace('Path2','Path1')}, 'duplicate path')
+run({'SS_delay.rpt': lambda s: s.replace('0.162','-1')}, 'finite nonnegative')
+run({'SS_delay.rpt': lambda s: s+'garbage\n'}, 'invalid report row')
+run({'SS_delay.rpt': lambda s: s.replace('0.3','0',1)}, 'must be positive')
+print(f'PASS: {count} cases (including timing oracle and round-trip checks)')

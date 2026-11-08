@@ -1,0 +1,4 @@
+Clock Period : 0.3
+# Synthetic teaching values, NOT official FF testcase data.
+Path2 : FF_37 -> FF_47 0.010
+Path1 : FF_5 -> FF_12 0.018
