@@ -10,10 +10,10 @@ SearchStats optimize(Design& d,const Evaluation& base,const Options& o,Clock::ti
 int repairCell = -1;
 for (int c = 0; c < static_cast<int>(d.cells.size()); ++c) {
     const auto& cell = d.cells[c];
-
+    // 略過沒有 delay 數據（無法使用）的 cell
     if (cell.delay[0].empty() || cell.delay[1].empty())
         continue;
-
+    // 比較面積 (width * height)，找出最小的
     if (repairCell < 0 ||
         cell.width * cell.height <
         d.cells[repairCell].width * d.cells[repairCell].height) {

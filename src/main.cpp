@@ -48,7 +48,7 @@ int main(int argc,char** argv) {
         Design d=check.empty()?original:loadDesignWithTree(dir,check);
         SearchStats stats;
         if(!check.empty()) stats.stop="check only";
-        else if(o.optimize) stats=optimize(d,base,o,start);
+        else if(o.optimize) stats=optimize(d,base,o,start); // 使用到 optimize()
         else stats.stop="optimization disabled";
         checkLegal(original,d);
         auto now=evaluate(d,o.fixedArea); auto s=score(base,now,o);
